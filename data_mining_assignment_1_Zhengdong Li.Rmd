@@ -1,0 +1,760 @@
+---
+title: "Classification assignment"
+author: "Zhengdong Li"
+date: "2023.10.25."
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+Answer to the questions:
+After data preparation and  modelling , "to_multiple" ," sent_email"," inherit" , " format" ," re_subj", "exclaim_subj" ,"number" ," password "," dollar" ," image ", "num_char" ," line_breaks"," cc" ," attach" are indicative variables, and accroding to c5 desicion tree, the top 3 indicative variables are "num_char", "sent_email", "to_multiple". The best model is support vector machine
+---
+
+```{r setup, include=FALSE}
+if (!require('knitr')) install.packages('knitr'); library('knitr')
+
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+```
+
+##Load the packages
+```{r}
+if (!require("ROSE")) install.packages("ROSE"); library("ROSE")
+if (!require('tidyverse')) install.packages('tidyverse'); library('tidyverse')
+if (!require('caret')) install.packages('caret'); library('caret')
+if (!require('GGally')) install.packages('GGally'); library('GGally')
+if (!require('inspectdf')) install.packages('inspectdf'); library('inspectdf')
+if (!require('cowplot')) install.packages('cowplot'); library('cowplot')
+if (!require('performanceEstimation'))install.packages('performanceEstimation');library('performanceEstimation')
+if (!require('tidymodels')) install.packages('tidymodels'); library('tidymodels')
+if (!require('rpart')) install.packages('rpart'); library('rpart')
+if (!require('rpart.plot')) install.packages('rpart.plot'); library('rpart.plot')
+if (!require('randomForest')) install.packages('randomForest'); library('randomForest')
+
+library(lubridate)
+library(tidyverse)
+library(caret)
+```
+
+## Create a unique "seed" based on my university (Neptun) Code
+
+Create a function that will convert Neptun code to a number that will be used to set seed
+
+```{r}
+
+generate_seed <- function(id) {
+  # Convert Neptun code to raw bits
+  id_raw <- charToRaw(id)
+  
+  # Convert bits to numeric
+  id_num <- as.numeric(id_raw)
+  
+  # Sum digits to create a number to set seed
+  id_sum <- sum(id_num)
+  
+  # Set seed
+  set.seed(id_sum)
+  
+  # Test if conevrsion was successful
+  return(id_sum)
+}
+```
+
+
+##My Neptun Code
+```{r}
+
+id <- "z6062a"
+generate_seed(id)
+
+```
+
+## Generate my unique data set
+
+```{r}
+newdata_no_labels <- read.csv("d:/Downloads/DM assignment1/newdata_no_labels.csv")
+
+
+newdata_no_labels_validation <- newdata_no_labels[sample(nrow(newdata_no_labels), 425),]
+
+inspect_num(newdata_no_labels)
+
+
+```
+
+##Factorize the variables of the new data without labels
+```{r}
+
+cols <- c("urgent_subj","image", "line_breaks","re_subj", "sent_email","to_multiple","cc","password", "attach", "number" , "format", "exclaim_subj", "exclaim_mess", "dollar", "num_char", "inherit", "from")
+
+for (i in cols){
+  
+ newdata_no_labels_validation[,i] <- as.factor(unlist(newdata_no_labels_validation[,i]))
+  
+}
+
+```
+
+
+
+##Exploratory analysis
+### Read the labelled data set
+
+```{r}
+
+data_with_labels <- read.csv("d:/Downloads/DM assignment1/data.csv")
+str(data_with_labels)
+
+
+```
+
+
+##Exploratory analysis
+
+##Inspect the unique value of each variable
+```{r}
+unique_values <- lapply(data_with_labels, unique)
+
+```
+
+##Inspect the numeric type variables
+```{r}
+inspect_num(data_with_labels)
+```
+##Inspect the character type variables
+```{r}
+inspect_cat(data_with_labels)
+```
+##Inspect the missing value of the dataset
+```{r}
+inspect_na(data_with_labels)
+
+```
+##Data Visualization
+
+##inspect the distribution of spam and not-spam values, if is this too imbalance or not, after seeing the plot, we observe that the spam emails are way more than the not_spam emails, so we need to make it balanced.
+```{r}
+
+plot.count <- ggplot(data = data_with_labels, aes(x= 1, fill = spam)) + geom_bar()+
+  theme(axis.text.x = element_blank()) + ggtitle(xlab("Spam"))
+
+plot(plot.count)
+```
+
+```{r}
+barplot(prop.table(table(data_with_labels$spam)),
+        col = rainbow(2),
+        ylim = c(0, 1),
+        main = "Class Distribution")
+```
+
+##Function ymd(), It is used to parse dates with year, month, and day components stored in character or numeric vectors into Date or POSIXct objects
+
+```{r}
+data_with_labels <- data_with_labels %>%
+  mutate(date_as_posix = ymd_hms(time))
+
+```
+
+##convert the date into day, hour , and put them in new columns respectively
+```{r}
+data_with_labels <- data_with_labels %>%
+  mutate(day = lubridate::wday(date_as_posix),
+         am_pm = lubridate::am(date_as_posix),
+         hour = hour(date_as_posix))
+```
+
+```{r}
+ggplot(data_with_labels, aes(x= date_as_posix, y = cc , colour = spam ))+ geom_point()+
+  ggtitle('Time by Month')
+
+
+```
+##Analyze the relationship between Spam and the variable "urgent_subj"
+```{r}
+
+ggplot(data_with_labels, aes(x= date_as_posix, y = urgent_subj , colour = spam )) +
+  geom_point()
+
+```
+##Draw the bar plots to analyze the relationship between variable"urgent_subj" and spam
+##From the frequncy plot we can observe that when the eamil is an urgent email, it is most likely not a spam email
+```{r}
+
+plot.count <- ggplot(data_with_labels, aes(x= urgent_subj , fill = spam)) + geom_bar()
+
+plot.frequency <- ggplot(data_with_labels, aes(x = urgent_subj, fill = spam)) + geom_bar(position = 'fill') +  theme(axis.title.y = element_blank())
+
+plot_grid(plot.count, plot.frequency)
+
+table(data_with_labels$urgent_subj)
+
+```
+##Analyze the relationship between variable "Viagra" and spam
+##we can observe that the variable "viagra" has only one value "0", so it might not be a good predictor
+```{r}
+plot.count <- ggplot(data_with_labels, aes(x= viagra , fill = spam)) + geom_bar()
+
+plot.frequency <- ggplot(data_with_labels, aes(x = viagra, fill = spam)) + geom_bar(position = 'fill')
+
+plot_grid(plot.count, plot.frequency)
+
+table(data_with_labels$viagra)
+
+
+
+```
+##Analyze the relationship between variable "attach" and "spam"
+##From the frequncy plot, we observe that, the variable "attatch" makes a difference
+```{r}
+plot.count <- ggplot(data_with_labels, aes(x= attach , fill = spam)) + geom_bar()
+
+plot.frequency <- ggplot(data_with_labels, aes(x = attach, fill = spam)) + geom_bar(position = 'fill') + theme(axis.title.y = element_blank())
+plot_grid(plot.count, plot.frequency)
+
+
+```
+##Analyzing the relationship between variable "password" and spam
+```{r}
+plot.count <- ggplot(data_with_labels, aes(x= password , fill = spam)) + geom_bar()
+plot.frequency <- ggplot(data_with_labels, aes(x = password, fill = spam)) + geom_bar(position = 'fill') +  theme(axis.title.y = element_blank())
+plot_grid(plot.count, plot.frequency)
+
+
+```
+
+
+
+
+##Analyze the relationship between variable "winner" and spam
+```{r}
+plot.count <- ggplot(data_with_labels, aes(x= winner , fill = spam)) + geom_bar()
+plot.frequency <- ggplot(data_with_labels, aes(x = winner, fill = spam)) + geom_bar(position = 'fill')
+plot_grid(plot.count, plot.frequency)
+
+table(data_with_labels$urgent_subj)
+
+
+
+```
+
+##Analyze the relationship between variable "cc" and spam
+```{r}
+plot.count <- ggplot(data = data_with_labels, aes(x=cc, fill = spam ))+geom_bar()+
+   theme( axis.text.x = element_text(colour = "blue"))+ 
+  coord_cartesian(ylim = c(0, 1000))
+
+
+plot.frequency <- ggplot(data = data_with_labels, aes(x=cc, fill = spam)) + 
+  geom_bar(position = 'fill')
+plot_grid(plot.count, plot.frequency)
+
+```
+##Analyze the relationship between variable "to_multiple" and spam
+```{r}
+
+plot.count <- ggplot(data = data_with_labels, aes(x= to_multiple, fill = spam ))+geom_bar()+
+   theme( axis.text.x = element_text(colour = "blue"))+ 
+  coord_cartesian(ylim = c(0, 1000))
+
+
+plot.frequency <- ggplot(data = data_with_labels, aes(x=to_multiple, fill = spam)) + 
+  geom_bar(position = 'fill') +  theme(axis.title.y = element_blank())
+
+plot_grid(plot.count, plot.frequency)
+```
+##Analyze the relationship between "sent_email" and spam
+```{r}
+plot.count <- ggplot(data = data_with_labels, aes(x= sent_email,  fill = spam ))+
+  geom_bar()+
+   theme( axis.text.x = element_text(colour = "blue"))
+
+plot.frequency <- ggplot(data =data_with_labels, aes(x= sent_email, fill = spam)) +
+  geom_bar(position = "fill") +  theme(axis.title.y = element_blank())
+
+plot_grid(plot.count, plot.frequency)
+
+table(data_with_labels$sent_email)
+
+```
+##Analyze the relationship between "re_subj" and spam
+```{r}
+plot.count <- ggplot(data = data_with_labels, aes(x= re_subj,  fill = spam ))+
+  geom_bar()+
+   theme( axis.text.x = element_text(colour = "blue"))
+
+plot.frequency <- ggplot(data = data_with_labels, aes(x= re_subj, fill = spam)) +
+  geom_bar(position = "fill") +  theme(axis.title.y = element_blank())
+
+plot_grid(plot.count, plot.frequency)
+
+table(data_with_labels$re_subj)
+
+```
+##Analyze the relationship between "from" and spam
+##The value distribution of "from " is too unbalanced, we might not use it as a predictor
+```{r}
+
+plot.count <- ggplot(data = data_with_labels, aes(x= from,  fill = spam ))+
+  geom_bar()+
+   theme( axis.text.x = element_text(colour = "blue"))
+
+plot.frequency <- ggplot(data = data_with_labels, aes(x= from , fill = spam)) +
+  geom_bar(position = "fill") +  theme(axis.title.y = element_blank())
+
+plot_grid(plot.count, plot.frequency)
+
+table(data_with_labels$from)
+
+```
+##Analyze the relationship between "image" and spam
+```{r}
+
+plot.count <- ggplot(data = data_with_labels, aes(x= image,  fill = spam ))+
+  geom_bar()+
+   theme( axis.text.x = element_text(colour = "blue"))
+
+plot.frequency <- ggplot(data = data_with_labels, aes(x= image, fill = spam)) +
+  geom_bar(position = "fill") +  theme(axis.title.y = element_blank())
+
+plot_grid(plot.count, plot.frequency)
+
+table(data_with_labels$image)
+```
+##Analyze the relationship between "line_breaks" and spam
+```{r}
+
+
+plot.count <- ggplot(data =data_with_labels, aes(x= line_breaks,  fill = spam ))+
+  geom_histogram()+
+   theme( axis.text.x = element_text(colour = "blue"))
+
+plot.frequency <- ggplot(data = data_with_labels,  aes(x= line_breaks, fill = spam)) +
+  geom_histogram(position = "fill") +  theme(axis.title.y = element_blank())
+
+plot_grid(plot.count, plot.frequency)
+
+table(data_with_labels$line_breaks)
+```
+##Analyze the relationship between "number" and spam
+```{r}
+plot.count <- ggplot(data =data_with_labels, aes(x= number,  fill = spam ))+
+  geom_bar()+
+   theme( axis.text.x = element_text(colour = "blue"))
+
+plot.frequency <- ggplot(data = data_with_labels,  aes(x= number, fill = spam)) +
+  geom_bar(position = "fill") +  theme(axis.title.y = element_blank())
+
+plot_grid(plot.count, plot.frequency)
+
+table(data_with_labels$number)
+
+```
+##Analyze the relationship between "format" and spam
+```{r}
+
+plot.count <- ggplot(data =data_with_labels, aes(x= format,  fill = spam ))+
+  geom_bar()+
+   theme( axis.text.x = element_text(colour = "blue"))
+
+plot.frequency <- ggplot(data = data_with_labels,  aes(x= format, fill = spam)) +
+  geom_bar(position = "fill") +  theme(axis.title.y = element_blank())
+
+plot_grid(plot.count, plot.frequency)
+
+table(data_with_labels$format)
+```
+##Analyze the relationship between "exclaim_subj" and spam
+```{r}
+plot.count <- ggplot(data =data_with_labels, aes(x= exclaim_subj,  fill = spam ))+
+  geom_bar()+
+   theme( axis.text.x = element_text(colour = "blue"))
+
+plot.frequency <- ggplot(data = data_with_labels,  aes(x= exclaim_subj, fill = spam)) +
+  geom_bar(position = "fill") +  theme(axis.title.y = element_blank(), axis.text.x = element_text(colour = "blue"))
+
+plot_grid(plot.count, plot.frequency)
+
+table(data_with_labels$exclaim_subj)
+
+```
+
+##Analyze the relationship between "inherit" and spam
+```{r}
+plot.count <- ggplot(data =data_with_labels, aes(x= inherit,  fill = spam ))+
+  geom_bar()+
+   theme( axis.text.x = element_text(colour = "blue"))
+
+plot.frequency <- ggplot(data = data_with_labels,  aes(x= inherit, fill = spam)) +
+  geom_bar(position = "fill") +  theme(axis.title.y = element_blank(), axis.text.x = element_text(colour = "blue"))
+
+plot_grid(plot.count, plot.frequency)
+
+table(data_with_labels$inherit)
+
+```
+##Analyze the relationship between "num_char" and spam
+```{r}
+
+plot.count <- ggplot(data =data_with_labels, aes(x= num_char,  fill = spam ))+
+  geom_histogram()+
+   theme( axis.text.x = element_text(colour = "blue"))
+
+plot.frequency <- ggplot(data = data_with_labels,  aes(x= num_char, fill = spam)) +
+  geom_histogram(position = "fill") +  theme(axis.title.y = element_blank(), axis.text.x = element_text(colour = "blue"))
+
+plot_grid(plot.count, plot.frequency)
+
+
+```
+
+
+
+##Analyze the relationship between "exclaim_mess" and spam
+```{r}
+plot.count <- ggplot(data =data_with_labels, aes(x= exclaim_mess,  fill = spam ))+
+  geom_histogram()+
+   theme( axis.text.x = element_text(colour = "blue"))
+
+plot.frequency <- ggplot(data = data_with_labels,  aes(x= exclaim_mess, fill = spam)) +
+  geom_histogram(position = "fill") +  theme(axis.title.y = element_blank(), axis.text.x = element_text(colour = "blue"))
+
+plot_grid(plot.count, plot.frequency)
+
+table(data_with_labels$exclaim_mess)
+```
+##Analyze the relationship between "dollar" and spam
+```{r}
+
+
+plot.count <- ggplot(data =data_with_labels, aes(x= dollar,  fill = spam ))+
+  geom_histogram()+
+   theme( axis.text.x = element_text(colour = "blue"))
+
+plot.frequency <- ggplot(data = data_with_labels,  aes(x= dollar, fill = spam)) +
+  geom_histogram(position = "fill") +  theme(axis.title.y = element_blank(), axis.text.x = element_text(colour = "blue"))
+
+plot_grid(plot.count, plot.frequency)
+
+table(data_with_labels$dollar)
+```
+##After the data visualization, we observe that variables "winner", "urgent_subject", "from" have unbalanced value distribution, which means it is not good for train the models
+
+
+##Build the classification model
+
+##Factorize the the dependent variable and the feature variables 
+```{r}
+cols <- c("spam","urgent_subj","image", "line_breaks","re_subj", "sent_email","to_multiple","cc","password", "attach", "number" , "format", "exclaim_subj", "exclaim_mess", "dollar", "num_char", "inherit", "from")
+
+for (i in cols){
+  
+  data_with_labels[,i] <- as.factor(unlist(data_with_labels[,i]))
+  
+}
+
+
+
+```
+
+
+##The parameters perc.over and perc.under control the amount of over-sampling of the minority class and under-sampling of the majority classes, respectively. 
+##Data Reshape, since the dataset is unbalanced, we will increase the amount of the minority class and  decrease the amount of majority class.
+```{r}
+table(data_with_labels$spam)
+
+```
+
+##(There is a littel mistake here, the SMOTE method should be appiled to training data set but not the whole data set.)Use function ovun.sample to balance the dataset by adjusting the parameter "method" to "both", which means increase the amount of the minority class and  decrease the amount of majority class.Parameter "p" controls the spliting of 2 classes
+```{r}
+Balanced_data <- ovun.sample(spam~., data = data_with_labels, method = "both",
+                    p = 0.5,
+                    seed = 425,
+                    N = 3000)$data
+```
+##check the dataset 
+```{r}
+table(Balanced_data$spam)
+```
+
+
+##Data partition
+```{r}
+tidymodels_prefer()
+set.seed(425)
+
+
+split_data <- initial_split(Balanced_data, prop = 0.7, strata = spam)
+split_data
+```
+##Check the distribution of the spliting data
+```{r}
+
+train_data <- training(split_data)
+test_data <- testing(split_data)
+
+dim(train_data)
+head(train_data)
+table(train_data$spam)
+
+```
+
+##Plot the distribution of the training dataset and testing dataset
+```{r}
+plot.count_train <- ggplot(data = train_data, aes(x= 1, fill = spam)) + geom_bar()+ggtitle(ylab("Train"))
+  
+
+plot.count_test <- ggplot(data = test_data, aes(x=1, fill = spam)) + geom_bar()+ggtitle(ylab("Test"))
+plot_grid(plot.count_train , plot.count_test)
+
+```
+##Set the folds for cross validation, here it's 5 folds
+```{r}
+
+folds <- rsample::vfold_cv(train_data, v = 5)
+
+```
+
+##Define the recepies for the workflows
+
+##step_zv remove the variables that only have one single value, step_dummy will convert the nominal values to dummy values
+```{r}
+spam_recipe <- 
+  recipe(spam ~   image + line_breaks + re_subj + dollar + sent_email + to_multiple + cc + password + attach + number + format + exclaim_subj  + inherit + dollar + num_char , data = train_data) %>%
+  step_dummy(all_nominal_predictors(), -spam) %>%
+  step_zv(all_predictors())%>%
+  step_normalize(all_predictors())
+
+
+
+spam_recipe_all <- 
+  recipe(spam ~ urgent_subj + image + line_breaks + re_subj + sent_email + to_multiple + cc + password + attach + number + format + viagra + winner + from + exclaim_subj + exclaim_mess + dollar + num_char + inherit , 
+         data = train_data) %>%
+  step_dummy(all_nominal_predictors(), -spam) %>%
+  step_zv(all_predictors())
+
+```
+
+##Specifiy the models
+```{r}
+if (!require('C50')) install.packages('C50'); library('C50')
+if (!require('glmnet')) install.packages('glmnet'); library('glmnet')
+if (!require('discrim')) install.packages('discrim'); library('discrim')
+if (!require('nnet')) install.packages('nnet'); library('nnet')
+if (!require('ranger')) install.packages('ranger'); library('ranger')
+```
+
+
+```{r}
+logistic_reg_glm_spec <-
+  logistic_reg() %>%
+  set_engine("glm")
+
+
+decision_tree_rpart_spec <- 
+  decision_tree(min_n = 15) %>%
+  set_engine("rpart") %>%
+  set_mode("classification")
+
+
+decision_tree_C5_spec <- 
+  decision_tree(min_n = 15) %>%
+  set_engine("C5.0") %>%
+  set_mode("classification")
+
+naive_Bayes_naivebayes_spec <-
+  naive_Bayes(smoothness = 1, Laplace = 'laplace') %>%
+  set_engine('naivebayes')
+
+svm_rbf_kernlab_spec <-
+  svm_rbf(cost = 50, rbf_sigma = 0, margin = 10) %>%
+  set_engine('kernlab') %>%
+  set_mode('classification')
+
+
+
+```
+
+
+##Setting the workflow by tuning the parameters "preproc" for preprocessing and models for selecting the models, Classification and Regression Trees (CART), RPART (Recursive Partitioning And Regression Trees) 
+```{r}
+
+spam_wflow <- 
+  workflow_set(preproc = list(Bigger_set = spam_recipe_all , Better_set = spam_recipe), 
+               models = list( 
+                              dtree_rpart = decision_tree_rpart_spec,
+                              dtree_c5 = decision_tree_C5_spec,
+                              logit_glm = logistic_reg_glm_spec
+                             )) %>%
+  option_add(id = "formula_cart", 
+              control = control_grid(extract = function(x) x))
+  
+  
+
+spam_wflow2 <- 
+  workflow_set(preproc = list(Bigger_set = spam_recipe_all , Better_set = spam_recipe), 
+               models = list( 
+                              NaiveBayes = naive_Bayes_naivebayes_spec,
+                              SVM_RBF = svm_rbf_kernlab_spec
+                             )) 
+  
+
+```
+
+##Train the decision tree and logitics regression models
+```{r}
+
+
+spam_kfold_results <- spam_wflow %>% 
+    workflow_map(resamples = folds, fn = "fit_resamples", verbose = TRUE)
+
+```
+##Create the performance measure metrics of each model
+
+##According to the table created, desicion tree with engine "rpart" is relatively better, from the table generated below, we observe that when we remove some variables, the accuracy and roc score of the model will increase
+```{r}
+rank_results(spam_kfold_results, rank_metric = "roc_auc")
+
+```
+
+```{r}
+autoplot(spam_kfold_results, metric = "roc_auc")
+
+```
+
+
+##C5 model, since we have numerical and categorical data, it's better to use C5 than rpart, also there is obviously no linear correlation between the variables.
+```{r}
+##load the necssary packages
+if (!require('C50')) install.packages ;library(C50) #for fitting c5.0 decision tree
+```
+
+##The c5 model shows that "num_char", "sent_email", "to_multiple" are the most indicative variables
+```{r}
+##set the process reproducible
+set.seed(425)
+
+##Train the model
+c5_model <- C5.0(spam ~ to_multiple + sent_email + inherit + format + re_subj + exclaim_subj + number + password + dollar + image  + line_breaks + cc + attach + num_char, data = train_data, rule = TRUE )
+
+print(c5_model)
+
+C5imp(c5_model, metric = 'usage') #use this function to see the importance of the variables by setting metric to 'usage'
+
+```
+##Measure the performance of the model
+```{r}
+c5_pred <- predict(c5_model, test_data)
+accuracy <- sum(c5_model == test_data$spam) / length(test_data$spam)
+
+confusionMatrix(c5_pred , test_data$spam)
+```
+
+
+
+##Naive Bayes Model, it is good for discreate data
+
+```{r}
+#Load the necessary packages
+library(e1071)
+library(naivebayes)
+library(dplyr)
+library(ggplot2)
+library(psych)
+```
+
+
+```{r}
+# Train the model, 
+NB_model <- naiveBayes(spam ~ to_multiple + sent_email + inherit + format + re_subj + exclaim_subj + number + password + dollar + image + num_char + line_breaks + cc + attach , data = train_data, smoothness = tune(),usekernel = tune())
+
+summary(NB_model)
+# Test the modelon the test set
+NB_pred <- predict(NB_model, test_data)
+
+```
+
+
+```{r}
+# Evaluate the model, 
+accuracy <- sum(NB_pred == test_data$spam) / length(test_data$spam)
+accuracy
+```
+```{r}
+##Confusion matrix for evaluating the model
+confusionMatrix(NB_pred, test_data$spam)
+
+
+```
+##Support vector machine
+```{r}
+##load the package for svm
+if (!require("ROCR")) install.packages("ROCR"); library(ROCR)
+
+if (!require("e1071")) install.packages("e1071");library(e1071)
+
+```
+
+##Fit the svm model, argument "cost" Specifes a penalty coefficient to control the complexity and fault tolerance of the model, default is 1. "gamma" is parameter needed for all kernels except linear (default: 1/(data dimension)), "kernel" specifies the type of kernel function, which can be "linear" (linear kernel), "polynomial" (polynomial kernel), "radial" (radial basis kernel) or "sigmoid" (S-shaped kernel). Default is "radial"
+```{r}
+
+svm_model <- svm(spam ~ to_multiple + sent_email + inherit + format + re_subj + exclaim_subj + number + password + dollar + image + num_char + line_breaks + cc + attach , data = train_data, kernel = "radial", cost = 50, gamma = 0.1, probability = TRUE)
+
+svm_pred <- predict(svm_model, test_data, probability = TRUE)
+
+##Evaluate the model
+accuracy <- sum(svm_pred == test_data$spam) / length(test_data$spam)
+accuracy
+
+##Confusion Matrix
+confusionMatrix(svm_pred, test_data$spam)
+
+summary(svm_model)
+
+```
+
+##PART Model, a rule system that creates pruned C4.5 decision trees for the data set and extracts rules and those instances that are covered by the rules are removed from the training data. The process is repeated until all instances are covered by extracted rules.
+```{r}
+
+# load the package
+if (!require("RWeka")) install.packages("RWeka"); library(RWeka)
+
+# fit model
+part_model <- PART(spam ~ to_multiple + sent_email + inherit + format + re_subj + exclaim_subj + number + password + dollar + image + num_char + line_breaks + cc + attach, data=train_data)
+# make predictions
+part_pred <- predict(part_model, test_data)
+
+##Evaluation
+confusionMatrix(part_pred,test_data$spam)
+
+```
+
+
+## Predict the new, unlabelled data
+## According to my Neptun code, i will randomly choose 425 data items from the unlabel new data, and according to the accuracy of each mode, i choose   model to predict the new data
+##As we can see the accuracy plot, svm model obtains the highest accuracy, but i decided to use PART decision tree to predict the unlabel data, because the accuracy of svm is way too high, which means the model might be overfitted, it might perform badly on some new data, so i choose the PART model(0.94), it is relatively lower , but still high.
+```{r}
+pdata <- data.frame(models <- c("c5", "Naive Bayes", "PART", "SVM"),
+                    accuracy <- c(0.98, 0.89, 0.94,0.99))
+                    
+
+performance <- ggplot(data = pdata, aes(x= models, y=  accuracy, fill = models)) + geom_bar(stat = 'identity')
+
+plot(performance)
+
+
+```
+##After datapreparation and  modelling , "to_multiple" ," sent_email"," inherit" , " format" ," re_subj", "exclaim_subj" ,"number" ," password "," dollar" ," image ", "num_char" ," line_breaks"," cc" ," attach" are indicative variables, and accroding to c5 desicion tree, the top 3 indicative variables are "num_char", "sent_email", "to_multiple". The best model is support vector machine
+
+```{r}
+
+prediction <- predict(part_model, newdata_no_labels_validation)
+
+
+df <- data.frame(prediction, newdata_no_labels_validation)
+write.csv(df,"newdata_no_labels_validation.csv")
+
+```
+
